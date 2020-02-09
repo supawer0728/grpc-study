@@ -1,0 +1,80 @@
+buildscript {
+    ext {
+        springBootVersion = '2.2.4.RELEASE'
+        protoBufPluginVersion = '0.8.11'
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+        classpath("com.google.protobuf:protobuf-gradle-plugin:${protoBufPluginVersion}")
+    }
+}
+
+ext {
+    grpcVersion = '1.27.0' // CURRENT_GRPC_VERSION
+    protobufVersion = '3.11.3'
+    protocVersion = protobufVersion
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+    apply plugin: 'org.springframework.boot'
+
+
+    group = 'com.parfait.study'
+    version = '0.0.1-SNAPSHOT'
+    sourceCompatibility = '11'
+
+    configurations {
+        compileOnly {
+            extendsFrom annotationProcessor
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+
+        testCompileOnly 'org.projectlombok:lombok'
+        testAnnotationProcessor 'org.projectlombok:lombok'
+
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs 'build/generated/source/proto/main/grpc'
+                srcDirs 'build/generated/source/proto/main/java'
+                srcDirs 'src/main/java'
+            }
+        }
+    }
+}
+
+project('server') {
+    dependencies {
+        compile project(':proto')
+    }
+}
+
+project('client') {
+    dependencies {
+        compile project(':proto')
+    }
+}

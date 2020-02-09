@@ -1,0 +1,35 @@
+apply plugin: 'com.google.protobuf'
+
+dependencies {
+    compile "io.grpc:grpc-protobuf:${grpcVersion}"
+    compile "io.grpc:grpc-stub:${grpcVersion}"
+    compile "io.grpc:grpc-api:${grpcVersion}"
+    compileOnly "javax.annotation:javax.annotation-api:1.2"
+
+    runtimeOnly "io.grpc:grpc-netty:${grpcVersion}"
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${protocVersion}"
+    }
+    plugins {
+        grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" }
+    }
+    generateProtoTasks {
+        all()*.plugins { grpc {} }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'
+            srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}
+
+bootRun.enabled = false
+bootJar.enabled = false
+jar.enabled = true
