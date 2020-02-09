@@ -18,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Component
-public class GrpcClientCommandLineRunner implements CommandLineRunner {
+public class GrpcClientRunner implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         String name = Optional.ofNullable(args)
@@ -33,6 +33,7 @@ public class GrpcClientCommandLineRunner implements CommandLineRunner {
         ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8080)
                                                       .usePlaintext()
                                                       .build();
+
         GreeterBlockingStub stub = GreeterGrpc.newBlockingStub(channel);
         HelloReply response;
         try {

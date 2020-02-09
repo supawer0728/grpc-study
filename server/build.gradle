@@ -1,4 +1,3 @@
 dependencies {
     implementation 'io.github.lognet:grpc-spring-boot-starter:3.5.1'
-    implementation "io.grpc:grpc-services:${grpcVersion}"
 }
