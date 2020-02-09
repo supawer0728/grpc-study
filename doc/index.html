@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Title</title>
+  <meta charset="utf-8">
+  <style>
+    @import url(https://fonts.googleapis.com/css?family=Nanum+Gothic);
+
+    body { font-family: 'Nanum Gothic'; }
+    h1, h2, h3 {
+      font-family: 'Nanum Gothic';
+      font-weight: bold;
+    }
+    .remark-code, .remark-inline-code { font-family: 'Nanum Gothic'; }
+    .remark-code {
+      border-radius: 10px;
+    }
+    .remark-inline-code {
+      background-color: #ffdddd;
+      font-weight: bold;
+      color: #ff4444;
+    }
+    .full-image img { width: 100%;}
+  </style>
+</head>
+<body>
+<textarea id="source">
+
+class: center, middle
+
+# gRPC 소개
+
+---
+
+### gRPC
+
+gRPC는 모던한 고성능 RPC 프레임워크.
+
+- 주 사용 시나리오:
+  - 마이크로서비스 아키텍쳐에서 각 폴리글랏 서비스간 효율적인 연결.
+  - 각종 모바일 장비, 브라우즈에서 백엔드 연결.
+  - 효율적인 Client Library 생성.
+
+- gRPC의 주요 기능:
+  - 10개 주요 언에 지원.
+  - HTTP/2 통신을 통한 양방향 스트리밍 지원.
+  - 인증, 트레이스, 로드밸런싱, 헬스체크 등의 플러그인 지원.
+
+---
+
+### Protocol Buffers
+
+- protocol buffers 사용
+  - 인터페이스 정의 언어(Interface Definition Language: IDL)
+  - 서비스간 메시지 교환 포맷
+
+![Concept Diagram](https://grpc.io/img/landing-2.svg)
+
+---
+
+### Protocol Buffers
+
+- Google에서 고안한 언어 중립적이며 구조화된 직렬화 데이터 정의(like json, xml).
+- `.proto` 확장자 파일에 정의.
+- Protocol Buffer Compiler(protoc)를 사용하여 여러 언어의 클래스로 변경.
+- 각 필드는 `getName()`/`setName(String)` 등으로 접근 가능.
+
+```protobuf
+message Person {
+    string name = 1;
+    int32 id = 2;
+    bool has_ponycopter = 3;
+}
+```
+
+---
+### Protocol Buffers Sample
+
+```protobuf
+// Greeter 서비스 인터페이스
+service Greeter {
+    // Sends a greeting
+    rpc SayHello (HelloRequest) returns (HelloReply) {}
+}
+
+// 요청
+message HelloRequest {
+    string name = 1;
+}
+
+// HelloRequest의 내용을 포함하여, "Hello {name}"으로 응답한다.
+message HelloReply {
+    string message = 1;
+}
+```
+
+---
+
+### 4 종류의 서비스
+
+- 클라이언트가 하나의 요청을 보내면 서버에서 하나의 응답을 받는 단항 연산
+
+```protobuf
+rpc SayHello(HelloRequest) returns (HelloResponse) { }
+```
+
+- 클라이언트의 하나의 요청에 서버의 스트리밍 데이터(연속적인 데이터)를 받는 연산.
+  - 클라이언트는 서버에서 스트림이 종료될 때까지 계속해서 메시지 수신.
+  - gRPC는 개별 요청에 대한 응답 스트림의 순서를 보장.
+
+```protobuf
+rpc LotsOfReplies(HelloRequest) returns (stream HelloResponse) { }
+```
+
+- 클라이언트가 스트림으로 요청을 보내고, 서버에서 하나의 응답을 받는 연산.
+  - 클라이언트의 스트림이 완료되고 나면 서버에서 응답.
+  - gRPC는 개별 요청에 대한 스트림 순서를 보장.
+
+```protobuf
+rpc LotsOfGreetings(stream HelloRequest) returns (HelloResponse) { }
+```
+
+- 서버/클라이언트가 모드 스트리밍하는 양방향 스트리밍 연산.
+  - 두 스트림은 독립적으로 운용되어, 요청을 다 받은 후 응답하거나, 요청을 받는 도중 응답하거나 하는 등의 조작이 가능.
+
+```protobuf
+rpc BidiHello(stream HelloRequest) returns (stream HelloResponse) { }
+```
+
+---
+
+### 동기 VS 비동기
+
+대부분의 언어에서 동기/비동기를 지원.
+
+다만 Java의 경우, RxJava나 Reactor의 편리한 지원은 없음.
+
+```protobuf
+// Greeter 서비스 인터페이스
+service Greeter {
+  // Sends a greeting
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+}
+```
+
+위 서비스를 Java Client는 비동기 방식으로 아래와 같이 호출.
+
+- GreeterGrpc.newFutureStub(channel).sayHello(HelloRequest)
+  - `ListenableFuture`가 반환되며, 이는 Future의 일반적인 구현체인 `CompletableFuture`가 아니므로 `Mono.fromFuture`가 불가능.
+- GreeterGrpc.newStub(channel).sayHello(HelloRequest, StreamObserver&lt;HelloReply&gt;)
+  - Callback을 등록하는 방식.
+
+---
+
+### Life Cycle
+
+#### Unary RPC
+
+- 클라이언트에서 stub을 통해 메서드를 호출.
+- 서버는 클라이언트의 메타정보와 함께 RPC 호출이 있었음을 인지.
+- 서버는 자신의 메타정보를 보내거나 클라이언트의 실제 요청이 오길 기다리거나 할 수 있는데, 이 순서는 어플리케이션에 의존함.
+- 서버가 클라이언트의 요청을 받으면 요청을 생성하기 위해 필요한 작업을 수행.
+- 성공적으로 처리가 되었다면, 상태 코드, 상태 메시지와 메타데이터를 포함하여 응답.
+- 상태값이 OK라면 클라이언트는 응답을 수신하고, 호출을 완료.
+
+#### Server streaming RPC
+
+- 서버가 응답의 스트림을 송신하다는 것 외에는 Unary RPC와 동작 방식은 동일.
+- 서버는 스트림을 통해 모든 응답을 보낸 후 상세 상태값과 부가 메타데이터를 송신.
+
+---
+
+### Life Cycle
+
+
+#### Client streaming RPC
+
+- 클라이언트가 요청의 스트림을 송신하는 것을 외에 Unary RPC와 동작 방식은 동일.
+
+#### Bidirectional streaming RPC
+
+- 양방향 스트리밍에서 초기 클라이언트의 메타 정보 송신.
+- 서버의 메타 정보 발신 혹은 추가 요청 대기 이후의 상황은 어플리케이션 구현에 의존.
+- 스트림은 완전 독립적으로 동작.
+  - 다양한 구현 가능.
+    - 요청/응답으로 ping-pong을 구현.
+    - 클라이언트에서 응답에 따라 새로운 요청을 발송.
+
+---
+### Deadline/Timeout
+
+- 클라이언트는 RPC가 종료되기까지의 기한을 정할 수 있음.
+- 이 기한을 초과하는 경우 `DEADLINE_EXCEEDED`를 발생.
+- 서버는 특정 RPC가 timeout 되었는지, 혹은 남은 시간이 얼마인지 확인 가능(query).
+- deadline/timeout을 적용하는 방법은 언어에 의존.
+---
+### RPC Termination
+
+- 클라이언트와 서버는 둘 다 독립적으로 호출의 성패 여부를 결정
+  - 때로는 불일치하는 경우가 발생.
+  - ex) 서버는 응답을 송신했지만, 클라이언트에서는 Timeout으로 인해 실패.
+- 클라이언트에서 요청을 모두 보내기 전에 서버에서 호출을 완료시킬 수 있음.
+
+### Cancelling RPCs
+
+- 클라이언트/서버 모두 언제든 RPC 호출을 취소 가능.
+- 취소된 RPC는 즉각 종료되며, 이후 작업이 진행되지 않음.
+- `되돌리기(Undo)`가 아니므로, 롤백을 위해서는 개발자 스스로 구현해야함.
+
+---
+### Channel
+
+- 채널은 Host, Port 정보를 사용.
+- gRPC 서버의 Connection을 제공하며, client 측의 stub을 생성할 때 사용.
+- 클라이언트는 채널에 기본 동작을 정의할 수 있다.
+  - Compression
+  - Name Resolver Factory
+  - Load Balancing Policy
+- `connected` 혹은 `idle` 상태를 갖는다.
+---
+class: center, middle
+# Sample
+---
+
+### 개요
+
+Client에서 서버의 `sayHello("Guest")`를 요청하여, `"Hello Guest"`를 응답받는 예제.
+.full-image[![Sample Diagram](img/sample.png)]
+---
+### Root
+#### 프로젝트 구조
+```groovy
+root
+|-- server : 서버 로직 구현
+|-- client : 클라이언트 로직 구현
+|-- proto : sevrer/client에서 공통으로 참조할 protocol buffers 정의
+```
+---
+#### build.gradle
+```groovy
+buildscript {
+    ext {
+        springBootVersion = '2.2.4.RELEASE'
+        protoBufPluginVersion = '0.8.11'
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+        classpath("com.google.protobuf:protobuf-gradle-plugin:${protoBufPluginVersion}")
+    }
+}
+```
+---
+#### build.gradle
+```groovy
+subprojects {
+    dependencies { ... }
+    sourceSets {
+        main {
+            java {
+                srcDirs 'build/generated/source/proto/main/grpc'
+                srcDirs 'build/generated/source/proto/main/java'
+                srcDirs 'src/main/java'
+            }
+        }
+    }
+}
+
+project('server') {
+    dependencies {
+        compile project(':proto')
+    }
+}
+
+project('client') {
+    dependencies {
+        compile project(':proto')
+    }
+}
+```
+---
+### proto 모듈
+#### 모듈 구조
+```groovy
+proto
+|-- src/main/proto
+|   |-- helloworld.proto
+|-- build.gradle
+```
+---
+#### protobuf-gradle-plugin
+- grpc 관련 의존성 선언
+  - sourceSet: protobuf 플러그인을 사용시 sourceSet에 proto가 추가.
+    - 기본 경로는 `src/main/proto`.
+  - protobuf: protocol buffer plugin에 대한 전반적인 설정.
+- protoc
+  - protocol buffer compiler에 대한 설정.
+  - artifact: repository에서 다운(`artifcat="com.google.protobuf:protoc:3.0"`)
+  - path: 실행환경 내의 protoc의 위치 지정(`path="/usr/local/bin/protoc"`)
+- plugins
+  - protoc를 codegen plugin과 함께 사용.
+  - xxx 플러그인에 대해서 protoc는 시스템 경로의 protoc-gen-xxx를 찾음.
+  - repository에서 다운로드 하거나(artifact), local 경로를 지정할 수 있음(path).
+  - gradle의 다른 플러그인처럼 자동으로 apply되지 않고, 직접 generateProtocolTasks에 플러그인을 적용해야함.
+---
+#### build.gradle
+```groovy
+dependencies {
+    compile "io.grpc:grpc-protobuf:${grpcVersion}"
+    compile "io.grpc:grpc-stub:${grpcVersion}"
+    compile "io.grpc:grpc-api:${grpcVersion}"
+    compileOnly "javax.annotation:javax.annotation-api:1.2"
+
+    runtimeOnly "io.grpc:grpc-netty:${grpcVersion}"
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${protocVersion}"
+    }
+    plugins {
+        grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" }
+    }
+    generateProtoTasks {
+        all()*.plugins { grpc {} }
+    }
+}
+```
+---
+#### build.gradle
+```groovy
+sourceSets {
+    main {
+        proto {
+           srcDirs 'src/main/proto'
+        }
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'
+            srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}
+
+bootRun.enabled = false
+bootJar.enabled = false
+jar.enabled = true
+```
+---
+#### helloworld.proto
+```protobuf
+helloworld.proto
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.parfait.study.grpc";
+option java_outer_classname = "HelloWorldProto";
+
+package helloworld;
+
+service Greeter {
+    rpc SayHello (HelloRequest) returns (HelloReply) {}
+}
+
+message HelloRequest {
+    string name = 1;
+}
+
+message HelloReply {
+    string message = 1;
+}
+```
+- syntax : protoc는 기본적으로 proco2 문법을 사용.
+- java_outer_classname: 해당 파일을 class로 변경할 때의 이름
+  - 기본적으로 해당 파일의 snake pattern을 camel-case pattern으로 생성.
+- java_package: class 파일을 생성할 패키지명.
+- java_multiple_files: 내부 클래스를 생성할지 외부의 여러 클래스로 생성할 지 여부.
+---
+### server 모듈
+#### 모듈 구조
+```groovy
+server
+|-- src/main
+|   |-- java
+|   |   |-- com.parfait.study.grpc.server
+|   |       |-- greeter
+|   |       |   |-- Greeter.java
+|   |       |-- GrpcServerApplication.java
+|   |-- resoucres
+|       |-- application.yml
+|-- build.gradle
+```
+---
+#### Spring 설정
+
+- boot-starter : https://github.com/LogNet/grpc-spring-boot-starter
+  - spring-boot 2.2.x 도 지원되는 것 확인.
+  - 최근 commit이 2달전
+
+**build.gradle**
+```groovy
+dependencies {
+    implementation 'io.github.lognet:grpc-spring-boot-starter:3.5.1'
+}
+```
+**application.yml**
+```yaml
+grpc.port: 8080
+```
+**GrpcServerApplication.java**
+```java
+@SpringBootApplication
+public class GrpcServerApplication {
+   public static void main(String[] args) {
+      SpringApplication.run(GrpcServerApplication.class, args);
+   }
+}
+```
+---
+**Greeter 구현**
+```java
+@GRpcService
+public class Greeter extends GreeterGrpc.GreeterImplBase {
+    @Override
+    public void sayHello(HelloRequest request, StreamObserver&lt;HelloReply&gt; responseObserver) {
+        HelloReply reply = HelloReply.newBuilder()
+                                     .setMessage("Hello, " + request.getName())
+                                     .build();
+        responseObserver.onNext(reply);
+        responseObserver.onCompleted();
+    }
+}
+```
+- boot-start의 구현상 BindableService 인터페이스를 구현하고, `@GRpcService` 어노테이션이 붙은 클래스는 gRPC로 자동 등록.
+  - GreeterGrpc.GreeterImplBase는 BindableService의 구현체.
+---
+### client 모듈
+#### 모듈 구조
+```groovy
+client
+|-- src/main/java
+|   |-- com.parfait.study.grpc.client
+|   |   |-- greeter
+|   |   |   |-- GrpcClientRunner.java
+|   |   |-- GrpcClientApplication.java
+|   |-- resoucres
+|       |-- application.yml
+|-- build.gradle
+```
+---
+#### Spring 설정
+**build.gradle**
+```groovy
+dependencies {
+    compile 'org.springframework.boot:spring-boot-starter'
+}
+```
+**GrpcClientApplication.java**
+```java
+@SpringBootApplication
+public class GrpcClientApplication {
+   public static void main(String[] args) {
+      SpringApplication.run(GrpcClientApplication.class, args);
+   }
+}
+```
+---
+**SayHello 요청**
+```java
+@Slf4j
+@Component
+public class GrpcClientRunner implements CommandLineRunner {
+    public void run(String... args) throws Exception {
+        String name = Stream.ofNullable(args)
+                                            .flatMap(Stream::findFirst)
+                                            .orElse("Guest");
+
+        HelloRequest request = HelloRequest.newBuilder()
+                                                                     .setName(name)
+                                                                     .build();
+
+        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8080)
+                                                                                                 .usePlaintext()
+                                                                                                 .build();
+
+        GreeterBlockingStub stub = GreeterGrpc.newBlockingStub(channel);
+        HelloReply response;
+        try {
+            response = stub.sayHello(request);
+        } catch (StatusRuntimeException e) {
+            log.warn("RPC failed: {0}", e.getStatus());
+            return;
+        }
+        log.info("Greeting: {}", response.getMessage());
+    }
+}
+```
+---
+**SayHello 요청**
+- `HelloRequest.newBuilder()` : protocol buffer로 생성된 메시지는 빌더 패턴으로 생성.
+- `channel`: 엔드 포인트에 대한 가상 Connection.
+  - 0~N 개의 실제 Connection 처리.
+  - 실제 RPC를 수행할 엔드포인트를 결정.
+    - client-side load balancing.
+  - 실제 사용시에는 직접 Channel을 호출하지 않고 Stub을 생성하여 호출.
+- `GreeterGrpc.newBlokingStub()`
+  - `newStub()/newFurtureStub()`을 호출할 수 있다.
+  - `newStub()`: `void sayHello(HelloRequest, StreamObserver&lt;HelloReply&gt;)`
+  - `newFurtureStub()`: `ListenableFurture sayHello(HelloRequest)`
+
+```bash
+$ java -jar client-0.0.1-SNAPSHOT.jar jihoon
+
+:: Spring Boot ::        (v2.2.4.RELEASE)
+INFO  : Greeting: Hello, jihoon
+```
+---
+# 정리
+- 장점
+  - 빠른 속도
+  - Http/1.1, json을 사용하는 일반적인 Http Web Application Server에 비해 Http/2.0, Serialized data를 다루니 당연히 빠를 수 밖에?
+- 단점
+  - reactive를 적용하기 위해 추가 작업이 필요하다.
+  - Spring 지원이 미미하다.
+  - protocol buffer 학습
+---
+### 참고
+  - gRPC Documents: https://grpc.io/docs/
+  - Protocol Buffers Documents: https://developers.google.com/protocol-buffers
+  - gRPC Spring Boot Starter : https://github.com/LogNet/grpc-spring-boot-starter
+</textarea>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js">
+</script>
+<script>
+  var slideshow = remark.create();
+</script>
+</body>
+</html>
